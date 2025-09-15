@@ -35,8 +35,7 @@ Este site está configurado para se conectar ao seu cluster MQTT seguro:
 - **Broker**: `wss://2ca26723bea1429ab8136fa9d24ea28d.s1.eu.hivemq.cloud:8884/mqtt`
 - **Porta**: `8884`
 - **Protocolo**: WebSocket TLS
-- **Usuário**: `morilhas`
-- **Senha**: `Pi3,1415`
+
 
 ---
 
