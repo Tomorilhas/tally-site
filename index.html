@@ -25,24 +25,28 @@
       border: 2px solid #888;
       border-radius: 8px;
       background: #f5f5f5;
-      transition: background 0.2s, border 0.2s;
-    }
-    .externa-btn.in-use {
-      background: #ffe9e0;
-      border-color: #e07;
-      color: #c00;
+      transition: background 0.2s, border 0.2s, color 0.2s;
       font-weight: bold;
+    }
+    .externa-btn.pgm {
+      background: #c00 !important;
+      color: #fff !important;
+      border-color: #b00 !important;
+    }
+    .externa-btn.pw {
+      background: #0c0 !important;
+      color: #fff !important;
+      border-color: #070 !important;
+    }
+    .externa-btn.by {
+      background: #ccc !important;
+      color: #2b2b2b !important;
+      border-color: #888 !important;
     }
     .externa-btn.selected {
-      border-color: #1b7;
-      background: #e0ffe8;
-      color: #007f23;
-      font-weight: bold;
-    }
-    .externa-btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      background: #eee;
+      outline: 4px solid #007f23;
+      z-index: 2;
+      position: relative;
     }
     #status-mqtt {
       font-size: 0.95em;
@@ -104,11 +108,11 @@
 <body>
   <div class="menu" id="menu">
     <h2>Selecione a Externa</h2>
-    <button class="externa-btn" onclick="selectExterna(1)" id="btn1">Externa 1</button>
-    <button class="externa-btn" onclick="selectExterna(2)" id="btn2">Externa 2</button>
-    <button class="externa-btn" onclick="selectExterna(3)" id="btn3">Externa 3</button>
-    <button class="externa-btn" onclick="selectExterna(4)" id="btn4">Externa 4</button>
-    <button class="externa-btn" onclick="selectExterna(5)" id="btn5">Externa 5</button>
+    <button class="externa-btn by" onclick="selectExterna(1)" id="btn1">Externa 1</button>
+    <button class="externa-btn by" onclick="selectExterna(2)" id="btn2">Externa 2</button>
+    <button class="externa-btn by" onclick="selectExterna(3)" id="btn3">Externa 3</button>
+    <button class="externa-btn by" onclick="selectExterna(4)" id="btn4">Externa 4</button>
+    <button class="externa-btn by" onclick="selectExterna(5)" id="btn5">Externa 5</button>
     <div id="status-mqtt">Conectando ao MQTT...</div>
     <div id="last-update"></div>
   </div>
@@ -119,6 +123,9 @@
 
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script>
+    // Gera um ID único para o cliente (sessão)
+    const CLIENT_ID = 'client_' + Math.random().toString(36).substr(2, 9);
+
     const brokerUrl = "wss://2ca26723bea1429ab8136fa9d24ea28d.s1.eu.hivemq.cloud:8884/mqtt";
     const options = {
       username: "morilhas",
@@ -139,18 +146,132 @@
     let currentExterna = null;
     let externasStatus = {};
     let lastUpdate = {};
+    let clientsInExterna = {}; // { '1': [clientId1, clientId2], ... }
 
+    // Subscribe nos tópicos de status e clients
+    client.on("connect", () => {
+      statusDiv.textContent = "✅ Conectado ao MQTT";
+      for (let i = 1; i <= 5; i++) {
+        client.subscribe(`externa/${i}/status`);
+        client.subscribe(`externa/${i}/clients`);
+      }
+    });
+
+    client.on("error", (err) => {
+      statusDiv.textContent = "❌ Erro na conexão MQTT";
+      console.error("MQTT Error:", err);
+    });
+
+    client.on("close", () => {
+      statusDiv.textContent = "🔌 Conexão fechada!";
+    });
+
+    client.on("offline", () => {
+      statusDiv.textContent = "⚠️ Cliente offline";
+    });
+
+    client.on("reconnect", () => {
+      statusDiv.textContent = "Tentando reconectar...";
+    });
+
+    client.on("message", (topic, message) => {
+      // Status das externas
+      if (topic.match(/^externa\/\d+\/status$/)) {
+        const externaNum = topic.split("/")[1];
+        const status = message.toString().trim().toUpperCase();
+        externasStatus[externaNum] = status;
+        lastUpdate[externaNum] = new Date();
+        updateButtons();
+        updateStatusLabel();
+        if (currentExterna) {
+          const data = lastUpdate[currentExterna];
+          if (data) {
+            lastUpdateDiv.textContent = "Última atualização: " + data.toLocaleTimeString("pt-BR");
+          }
+        }
+      }
+      // Gerenciamento dos clientes conectados em cada externa
+      if (topic.match(/^externa\/\d+\/clients$/)) {
+        const externaNum = topic.split("/")[1];
+        let msg = "";
+        try {
+          msg = JSON.parse(message.toString());
+        } catch(e) { return; }
+        if (!clientsInExterna[externaNum]) clientsInExterna[externaNum] = [];
+        if (msg.action === "enter") {
+          if (!clientsInExterna[externaNum].includes(msg.client))
+            clientsInExterna[externaNum].push(msg.client);
+        } else if (msg.action === "leave") {
+          clientsInExterna[externaNum] = clientsInExterna[externaNum].filter(c => c !== msg.client);
+        }
+        updateButtons();
+      }
+    });
+
+    function selectExterna(num) {
+      // Publica presença no tópico clients da externa
+      currentExterna = num;
+      client.publish(`externa/${num}/clients`, JSON.stringify({client: CLIENT_ID, action: "enter", timestamp: Date.now()}), {retain: false});
+      menuDiv.style.display = "none";
+      backBtn.style.display = "block";
+      updateButtons();
+      updateStatusLabel();
+      updateExternaInfo();
+      statusLabel.style.display = "block";
+      externaInfo.style.display = "block";
+      // Exibe imediatamente o status da última mensagem recebida (retida)
+      const status = (externasStatus[num] || "BY").toUpperCase();
+      statusLabel.textContent = status;
+      statusLabel.className = "";
+      if (status === "PGM") {
+        statusLabel.classList.add("pgm");
+        document.body.style.backgroundColor = "#c00";
+      } else if (status === "PW") {
+        statusLabel.classList.add("pw");
+        document.body.style.backgroundColor = "#0c0";
+      } else {
+        statusLabel.classList.add("by");
+        document.body.style.backgroundColor = "#ccc";
+      }
+      // Atualiza hora imediatamente
+      const data = lastUpdate[num];
+      if (data) {
+        lastUpdateDiv.textContent = "Última atualização: " + data.toLocaleTimeString("pt-BR");
+      } else {
+        lastUpdateDiv.textContent = "";
+      }
+    }
+
+    function goBack() {
+      if (currentExterna) {
+        client.publish(`externa/${currentExterna}/clients`, JSON.stringify({client: CLIENT_ID, action: "leave", timestamp: Date.now()}), {retain: false});
+      }
+      currentExterna = null;
+      menuDiv.style.display = "block";
+      backBtn.style.display = "none";
+      statusLabel.style.display = "none";
+      externaInfo.style.display = "none";
+      document.body.style.backgroundColor = "#ccc";
+      lastUpdateDiv.textContent = "";
+      updateButtons();
+    }
+
+    // Atualiza visual dos botões conforme status e presença
     function updateButtons() {
       for (let i = 1; i <= 5; i++) {
         const btn = document.getElementById("btn" + i);
-        const status = externasStatus[i] || "BY";
-        btn.classList.remove("in-use", "selected");
-        btn.disabled = false;
-        if (status === "PGM" || status === "PW") {
-          btn.classList.add("in-use");
-          btn.textContent = `Externa ${i} (em uso)`;
-        } else {
-          btn.textContent = `Externa ${i}`;
+        const status = (externasStatus[i] || "BY").toUpperCase();
+        btn.classList.remove("pgm", "pw", "by", "selected");
+        btn.textContent = `Externa ${i}`;
+        if (status === "PGM") btn.classList.add("pgm");
+        else if (status === "PW") btn.classList.add("pw");
+        else btn.classList.add("by");
+
+        // Verifica presença de outros clientes além de mim
+        const clients = clientsInExterna[i] || [];
+        const otherClients = clients.filter(c => c !== CLIENT_ID);
+        if (otherClients.length > 0) {
+          btn.textContent += " (em uso)";
         }
         if (currentExterna == i) {
           btn.classList.add("selected");
@@ -191,91 +312,15 @@
       }
     }
 
-    client.on("connect", () => {
-      statusDiv.textContent = "✅ Conectado ao MQTT";
-      for (let i = 1; i <= 5; i++) {
-        client.subscribe(`externa/${i}/status`);
-      }
-    });
-
-    client.on("error", (err) => {
-      statusDiv.textContent = "❌ Erro na conexão MQTT";
-      console.error("MQTT Error:", err);
-    });
-
-    client.on("close", () => {
-      statusDiv.textContent = "🔌 Conexão fechada!";
-    });
-
-    client.on("offline", () => {
-      statusDiv.textContent = "⚠️ Cliente offline";
-    });
-
-    client.on("reconnect", () => {
-      statusDiv.textContent = "Tentando reconectar...";
-    });
-
-    client.on("message", (topic, message) => {
-      const externaNum = topic.toString().split("/")[1];
-      const status = message.toString().trim().toUpperCase();
-      externasStatus[externaNum] = status;
-      lastUpdate[externaNum] = new Date();
-      updateButtons();
-      updateStatusLabel();
-      if (currentExterna) {
-        const data = lastUpdate[currentExterna];
-        if (data) {
-          lastUpdateDiv.textContent = "Última atualização: " + data.toLocaleTimeString("pt-BR");
-        }
-      }
-    });
-
-    function selectExterna(num) {
-      currentExterna = num;
-      menuDiv.style.display = "none";
-      backBtn.style.display = "block";
-      updateButtons();
-      updateStatusLabel();
-      updateExternaInfo();
-      statusLabel.style.display = "block";
-      externaInfo.style.display = "block";
-      // Exibe imediatamente o status da última mensagem recebida (retida)
-      const status = (externasStatus[num] || "BY").toUpperCase();
-      statusLabel.textContent = status;
-      statusLabel.className = "";
-      if (status === "PGM") {
-        statusLabel.classList.add("pgm");
-        document.body.style.backgroundColor = "#c00";
-      } else if (status === "PW") {
-        statusLabel.classList.add("pw");
-        document.body.style.backgroundColor = "#0c0";
-      } else {
-        statusLabel.classList.add("by");
-        document.body.style.backgroundColor = "#ccc";
-      }
-      // Atualiza hora imediatamente
-      const data = lastUpdate[num];
-      if (data) {
-        lastUpdateDiv.textContent = "Última atualização: " + data.toLocaleTimeString("pt-BR");
-      } else {
-        lastUpdateDiv.textContent = "";
-      }
-    }
-
-    function goBack() {
-      currentExterna = null;
-      menuDiv.style.display = "block";
-      backBtn.style.display = "none";
-      statusLabel.style.display = "none";
-      externaInfo.style.display = "none";
-      document.body.style.backgroundColor = "#ccc";
-      lastUpdateDiv.textContent = "";
-      updateButtons();
-    }
-
     document.addEventListener('keydown', function(event) {
       if (event.key === "Escape" && currentExterna !== null) {
         goBack();
+      }
+    });
+
+    window.addEventListener('beforeunload', function() {
+      if (currentExterna) {
+        client.publish(`externa/${currentExterna}/clients`, JSON.stringify({client: CLIENT_ID, action: "leave", timestamp: Date.now()}), {retain: false});
       }
     });
 
