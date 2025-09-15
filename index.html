@@ -18,14 +18,40 @@
     .externa-btn {
       display: block;
       margin: 10px auto;
-      padding: 15px;
-      width: 80%;
-      font-size: 1.2em;
+      padding: 18px;
+      width: 85%;
+      font-size: 1.25em;
       cursor: pointer;
+      border: 2px solid #888;
+      border-radius: 8px;
+      background: #f5f5f5;
+      transition: background 0.2s, border 0.2s;
+    }
+    .externa-btn.in-use {
+      background: #ffe9e0;
+      border-color: #e07;
+      color: #c00;
+      font-weight: bold;
+    }
+    .externa-btn.selected {
+      border-color: #1b7;
+      background: #e0ffe8;
+      color: #007f23;
+      font-weight: bold;
+    }
+    .externa-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      background: #eee;
     }
     #status-mqtt {
-      font-size: 0.9em;
+      font-size: 0.95em;
       margin-top: 10px;
+    }
+    #last-update {
+      font-size: 0.85em;
+      color: #666;
+      margin-top: 8px;
     }
     #back-btn {
       position: absolute;
@@ -35,6 +61,43 @@
       font-size: 1em;
       cursor: pointer;
       display: none;
+    }
+    #externa-info {
+      font-size: 1.3em;
+      margin-top: 40px;
+      font-weight: bold;
+    }
+    #status-label {
+      font-size: 2.3em;
+      margin-top: 20px;
+      font-weight: bold;
+      letter-spacing: 0.12em;
+    }
+    #status-label.pgm {
+      color: #fff;
+      background: #c00;
+      border-radius: 8px;
+      padding: 8px 30px;
+      display: inline-block;
+    }
+    #status-label.pw {
+      color: #fff;
+      background: #0c0;
+      border-radius: 8px;
+      padding: 8px 30px;
+      display: inline-block;
+    }
+    #status-label.by {
+      color: #222;
+      background: #ccc;
+      border-radius: 8px;
+      padding: 8px 30px;
+      display: inline-block;
+    }
+    @media (max-width: 600px) {
+      .externa-btn { font-size: 1em; padding: 15px; }
+      #externa-info { font-size: 1em; margin-top: 20px;}
+      #status-label { font-size: 1.5em; margin-top: 10px;}
     }
   </style>
 </head>
@@ -47,9 +110,12 @@
     <button class="externa-btn" onclick="selectExterna(4)" id="btn4">Externa 4</button>
     <button class="externa-btn" onclick="selectExterna(5)" id="btn5">Externa 5</button>
     <div id="status-mqtt">Conectando ao MQTT...</div>
+    <div id="last-update"></div>
   </div>
 
   <button id="back-btn" onclick="goBack()">← Voltar</button>
+  <div id="externa-info" style="display:none;"></div>
+  <div id="status-label" style="display:none;"></div>
 
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script>
@@ -66,8 +132,64 @@
     const statusDiv = document.getElementById("status-mqtt");
     const menuDiv = document.getElementById("menu");
     const backBtn = document.getElementById("back-btn");
+    const statusLabel = document.getElementById("status-label");
+    const externaInfo = document.getElementById("externa-info");
+    const lastUpdateDiv = document.getElementById("last-update");
 
     let currentExterna = null;
+    let externasStatus = {};
+    let lastUpdate = {};
+
+    function updateButtons() {
+      for (let i = 1; i <= 5; i++) {
+        const btn = document.getElementById("btn" + i);
+        const status = externasStatus[i] || "BY";
+        btn.classList.remove("in-use", "selected");
+        btn.disabled = false;
+        if (status === "PGM" || status === "PW") {
+          btn.classList.add("in-use");
+          btn.textContent = `Externa ${i} (em uso)`;
+        } else {
+          btn.textContent = `Externa ${i}`;
+        }
+        if (currentExterna == i) {
+          btn.classList.add("selected");
+        }
+      }
+    }
+
+    function updateStatusLabel() {
+      if (currentExterna) {
+        const status = (externasStatus[currentExterna] || "BY").toUpperCase();
+        statusLabel.style.display = "block";
+        statusLabel.className = "";
+        if (status === "PGM") {
+          statusLabel.textContent = "PGM";
+          statusLabel.classList.add("pgm");
+          document.body.style.backgroundColor = "#c00";
+        } else if (status === "PW") {
+          statusLabel.textContent = "PW";
+          statusLabel.classList.add("pw");
+          document.body.style.backgroundColor = "#0c0";
+        } else {
+          statusLabel.textContent = "BY";
+          statusLabel.classList.add("by");
+          document.body.style.backgroundColor = "#ccc";
+        }
+      } else {
+        statusLabel.style.display = "none";
+        document.body.style.backgroundColor = "#ccc";
+      }
+    }
+
+    function updateExternaInfo() {
+      if (currentExterna) {
+        externaInfo.style.display = "block";
+        externaInfo.textContent = `Você está na Externa ${currentExterna}`;
+      } else {
+        externaInfo.style.display = "none";
+      }
+    }
 
     client.on("connect", () => {
       statusDiv.textContent = "✅ Conectado ao MQTT";
@@ -89,25 +211,21 @@
       statusDiv.textContent = "⚠️ Cliente offline";
     });
 
+    client.on("reconnect", () => {
+      statusDiv.textContent = "Tentando reconectar...";
+    });
+
     client.on("message", (topic, message) => {
       const externaNum = topic.toString().split("/")[1];
-      const status = message.toString().trim();
-      const btn = document.getElementById("btn" + externaNum);
-      if (btn) {
-        if (status === "PGM" || status === "PW") {
-          btn.textContent = `Externa ${externaNum} (em uso)`;
-        } else {
-          btn.textContent = `Externa ${externaNum}`;
-        }
-      }
-
-      if (currentExterna && topic === `externa/${currentExterna}/status`) {
-        if (status === "PGM") {
-          document.body.style.backgroundColor = "#c00";
-        } else if (status === "PW") {
-          document.body.style.backgroundColor = "#0c0";
-        } else { // BY ou qualquer outro valor
-          document.body.style.backgroundColor = "#ccc";
+      const status = message.toString().trim().toUpperCase();
+      externasStatus[externaNum] = status;
+      lastUpdate[externaNum] = new Date();
+      updateButtons();
+      updateStatusLabel();
+      if (currentExterna) {
+        const data = lastUpdate[currentExterna];
+        if (data) {
+          lastUpdateDiv.textContent = "Última atualização: " + data.toLocaleTimeString("pt-BR");
         }
       }
     });
@@ -116,15 +234,54 @@
       currentExterna = num;
       menuDiv.style.display = "none";
       backBtn.style.display = "block";
-      document.body.style.backgroundColor = "#ccc";
+      updateButtons();
+      updateStatusLabel();
+      updateExternaInfo();
+      statusLabel.style.display = "block";
+      externaInfo.style.display = "block";
+      // Exibe imediatamente o status da última mensagem recebida (retida)
+      const status = (externasStatus[num] || "BY").toUpperCase();
+      statusLabel.textContent = status;
+      statusLabel.className = "";
+      if (status === "PGM") {
+        statusLabel.classList.add("pgm");
+        document.body.style.backgroundColor = "#c00";
+      } else if (status === "PW") {
+        statusLabel.classList.add("pw");
+        document.body.style.backgroundColor = "#0c0";
+      } else {
+        statusLabel.classList.add("by");
+        document.body.style.backgroundColor = "#ccc";
+      }
+      // Atualiza hora imediatamente
+      const data = lastUpdate[num];
+      if (data) {
+        lastUpdateDiv.textContent = "Última atualização: " + data.toLocaleTimeString("pt-BR");
+      } else {
+        lastUpdateDiv.textContent = "";
+      }
     }
 
     function goBack() {
       currentExterna = null;
       menuDiv.style.display = "block";
       backBtn.style.display = "none";
+      statusLabel.style.display = "none";
+      externaInfo.style.display = "none";
       document.body.style.backgroundColor = "#ccc";
+      lastUpdateDiv.textContent = "";
+      updateButtons();
     }
+
+    document.addEventListener('keydown', function(event) {
+      if (event.key === "Escape" && currentExterna !== null) {
+        goBack();
+      }
+    });
+
+    updateButtons();
+    updateStatusLabel();
+    updateExternaInfo();
   </script>
 </body>
 </html>
