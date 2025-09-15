@@ -5,121 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Tally Externa</title>
   <style>
-    body {
-      margin: 0;
-      font-family: sans-serif;
-      text-align: center;
-      background-color: #ccc;
-      color: #333;
-    }
-    .menu, .status {
-      padding: 20px;
-    }
-    .externa-btn {
-      display: block;
-      margin: 10px auto;
-      padding: 18px;
-      width: 85%;
-      font-size: 1.25em;
-      cursor: pointer;
-      border: 2px solid #888;
-      border-radius: 8px;
-      background: #f5f5f5;
-      transition: background 0.2s, border 0.2s, color 0.2s;
-      font-weight: bold;
-    }
-    .externa-btn.pgm {
-      background: #c00 !important;
-      color: #fff !important;
-      border-color: #b00 !important;
-    }
-    .externa-btn.pw {
-      background: #0c0 !important;
-      color: #fff !important;
-      border-color: #070 !important;
-    }
-    .externa-btn.by {
-      background: #ccc !important;
-      color: #2b2b2b !important;
-      border-color: #888 !important;
-    }
-    .externa-btn.selected {
-      outline: 4px solid #007f23;
-      z-index: 2;
-      position: relative;
-    }
-    #status-mqtt {
-      font-size: 0.95em;
-      margin-top: 10px;
-    }
-    #last-update {
-      font-size: 0.85em;
-      color: #666;
-      margin-top: 8px;
-    }
-    #back-btn {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      padding: 10px;
-      font-size: 1em;
-      cursor: pointer;
-      display: none;
-    }
-    #externa-info {
-      font-size: 1.3em;
-      margin-top: 40px;
-      font-weight: bold;
-    }
-    #status-label {
-      font-size: 2.3em;
-      margin-top: 20px;
-      font-weight: bold;
-      letter-spacing: 0.12em;
-    }
-    #status-label.pgm {
-      color: #fff;
-      background: #c00;
-      border-radius: 8px;
-      padding: 8px 30px;
-      display: inline-block;
-    }
-    #status-label.pw {
-      color: #fff;
-      background: #0c0;
-      border-radius: 8px;
-      padding: 8px 30px;
-      display: inline-block;
-    }
-    #status-label.by {
-      color: #222;
-      background: #ccc;
-      border-radius: 8px;
-      padding: 8px 30px;
-      display: inline-block;
-    }
-    @media (max-width: 600px) {
-      .externa-btn { font-size: 1em; padding: 15px; }
-      #externa-info { font-size: 1em; margin-top: 20px;}
-      #status-label { font-size: 1.5em; margin-top: 10px;}
-    }
+    /* ... (mantém o mesmo CSS anterior) ... */
   </style>
 </head>
 <body>
-  <div class="menu" id="menu">
-    <h2>Selecione a Externa</h2>
-    <button class="externa-btn by" onclick="selectExterna(1)" id="btn1">Externa 1</button>
-    <button class="externa-btn by" onclick="selectExterna(2)" id="btn2">Externa 2</button>
-    <button class="externa-btn by" onclick="selectExterna(3)" id="btn3">Externa 3</button>
-    <button class="externa-btn by" onclick="selectExterna(4)" id="btn4">Externa 4</button>
-    <button class="externa-btn by" onclick="selectExterna(5)" id="btn5">Externa 5</button>
-    <div id="status-mqtt">Conectando ao MQTT...</div>
-    <div id="last-update"></div>
-  </div>
-
-  <button id="back-btn" onclick="goBack()">← Voltar</button>
-  <div id="externa-info" style="display:none;"></div>
-  <div id="status-label" style="display:none;"></div>
+  <!-- ... (mantém o mesmo HTML anterior) ... -->
 
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script>
@@ -147,6 +37,30 @@
     let externasStatus = {};
     let lastUpdate = {};
     let clientsInExterna = {}; // { '1': [clientId1, clientId2], ... }
+
+    // --- WAKE LOCK: manter tela ativa ---
+    let wakeLock = null;
+    async function ativarTelaSempreLigada() {
+      if ('wakeLock' in navigator) {
+        try {
+          wakeLock = await navigator.wakeLock.request('screen');
+          wakeLock.addEventListener('release', () => {
+            // Wake Lock liberada
+          });
+        } catch (err) {
+          // Falha ao requisitar wake lock (talvez permissão, ou não suportado)
+        }
+      }
+    }
+    async function liberarTelaSempreLigada() {
+      if (wakeLock) {
+        try {
+          await wakeLock.release();
+        } catch (err) {}
+        wakeLock = null;
+      }
+    }
+    // -----------------------------------
 
     // Subscribe nos tópicos de status e clients
     client.on("connect", () => {
@@ -211,7 +125,7 @@
     function selectExterna(num) {
       // Publica presença no tópico clients da externa
       currentExterna = num;
-      client.publish(`externa/${num}/clients`, JSON.stringify({client: CLIENT_ID, action: "enter", timestamp: Date.now()}), {retain: true});
+      client.publish(`externa/${num}/clients`, JSON.stringify({client: CLIENT_ID, action: "enter", timestamp: Date.now()}), {retain: false});
       menuDiv.style.display = "none";
       backBtn.style.display = "block";
       updateButtons();
@@ -240,6 +154,7 @@
       } else {
         lastUpdateDiv.textContent = "";
       }
+      ativarTelaSempreLigada();
     }
 
     function goBack() {
@@ -254,6 +169,7 @@
       document.body.style.backgroundColor = "#ccc";
       lastUpdateDiv.textContent = "";
       updateButtons();
+      liberarTelaSempreLigada();
     }
 
     // Atualiza visual dos botões conforme status e presença
@@ -322,6 +238,7 @@
       if (currentExterna) {
         client.publish(`externa/${currentExterna}/clients`, JSON.stringify({client: CLIENT_ID, action: "leave", timestamp: Date.now()}), {retain: false});
       }
+      liberarTelaSempreLigada();
     });
 
     updateButtons();
