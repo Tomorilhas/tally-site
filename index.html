@@ -1,140 +1,128 @@
-
+html_content = """
 <!DOCTYPE html>
-<html>
+<html lang="pt-br">
 <head>
-  <meta charset="UTF-8">
-  <title>Tally Link</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Tally Externa</title>
   <style>
-    body, html {
+    body {
       margin: 0;
-      padding: 0;
-      height: 100%;
       font-family: sans-serif;
       text-align: center;
       background-color: #ccc;
       color: #333;
     }
-    #menu, #statusScreen {
-      display: none;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      height: 100%;
-    }
-    .btn {
+    .menu, .status {
       padding: 20px;
-      margin: 10px;
-      font-size: 20px;
+    }
+    .externa-btn {
+      display: block;
+      margin: 10px auto;
+      padding: 15px;
       width: 80%;
-      max-width: 300px;
+      font-size: 1.2em;
       cursor: pointer;
     }
-    #mqttStatus {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      font-size: 14px;
+    #status-mqtt {
+      font-size: 0.9em;
+      margin-top: 10px;
     }
-    #backBtn {
+    #back-btn {
       position: absolute;
       top: 10px;
       left: 10px;
-      font-size: 16px;
       padding: 10px;
+      font-size: 1em;
       cursor: pointer;
+      display: none;
     }
   </style>
 </head>
 <body>
-  <div id="mqttStatus">Conectando ao MQTT...</div>
-  <div id="menu" style="display: flex;">
-    <h2>Selecione sua externa</h2>
-    <button class="btn" onclick="selectExterna(1)" id="btn1">Externa 1</button>
-    <button class="btn" onclick="selectExterna(2)" id="btn2">Externa 2</button>
-    <button class="btn" onclick="selectExterna(3)" id="btn3">Externa 3</button>
-    <button class="btn" onclick="selectExterna(4)" id="btn4">Externa 4</button>
-    <button class="btn" onclick="selectExterna(5)" id="btn5">Externa 5</button>
+  <div class="menu" id="menu">
+    <h2>Selecione a Externa</h2>
+    <button class="externa-btn" onclick="selectExterna(1)" id="btn1">Externa 1</button>
+    <button class="externa-btn" onclick="selectExterna(2)" id="btn2">Externa 2</button>
+    <button class="externa-btn" onclick="selectExterna(3)" id="btn3">Externa 3</button>
+    <button class="externa-btn" onclick="selectExterna(4)" id="btn4">Externa 4</button>
+    <button class="externa-btn" onclick="selectExterna(5)" id="btn5">Externa 5</button>
+    <div id="status-mqtt">Conectando ao MQTT...</div>
   </div>
 
-  <div id="statusScreen">
-    <div id="backBtn" onclick="goBack()">← Menu</div>
-    <h1 id="statusText">Aguardando sinal...</h1>
-  </div>
+  <button id="back-btn" onclick="goBack()">← Voltar</button>
 
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script>
-    const brokerUrl = "2ca26723bea1429ab8136fa9d24ea28d.s1.eu.hivemq.cloud:8884/mqtt";
+    const brokerUrl = "wss://2ca26723bea1429ab8136fa9d24ea28d.s1.eu.hivemq.cloud:8884/mqtt";
     const options = {
       username: "morilhas",
       password: "Pi3,1415",
-      protocolVersion: 4,
-      clean: true,
-      reconnectPeriod: 1000,
-      connectTimeout: 30 * 1000
+      connectTimeout: 4000,
+      reconnectPeriod: 4000,
+      clean: true
     };
 
     const client = mqtt.connect(brokerUrl, options);
-    const mqttStatus = document.getElementById("mqttStatus");
-    const buttons = [1, 2, 3, 4, 5].map(i => document.getElementById("btn" + i));
+    const statusDiv = document.getElementById("status-mqtt");
+    const menuDiv = document.getElementById("menu");
+    const backBtn = document.getElementById("back-btn");
+
     let currentExterna = null;
 
     client.on("connect", () => {
-      mqttStatus.textContent = "Conectado ao MQTT";
-      buttons.forEach((btn, i) => {
-        client.subscribe(`externa/${i+1}/status`);
-      });
+      statusDiv.textContent = "✅ Conectado ao MQTT";
+      for (let i = 1; i <= 5; i++) {
+        client.subscribe(`externa/${i}/status`);
+      }
     });
 
     client.on("error", (err) => {
-      mqttStatus.textContent = "Erro na conexão MQTT";
+      statusDiv.textContent = "❌ Erro na conexão MQTT";
       console.error("MQTT Error:", err);
     });
 
     client.on("message", (topic, message) => {
+      const externaNum = topic.toString().split("/")[1];
       const status = message.toString();
-      const externaNum = topic.split("/")[1];
       const btn = document.getElementById("btn" + externaNum);
-      if (status === "program" || status === "preview") {
-        btn.style.backgroundColor = status === "program" ? "#f00" : "#0f0";
-        btn.style.color = "#fff";
-      } else {
-        btn.style.backgroundColor = "";
-        btn.style.color = "#333";
+      if (btn) {
+        if (status === "program" || status === "preview") {
+          btn.textContent = `Externa ${externaNum} (em uso)`;
+        } else {
+          btn.textContent = `Externa ${externaNum}`;
+        }
       }
 
       if (currentExterna && topic === `externa/${currentExterna}/status`) {
-        updateStatusScreen(status);
+        if (status === "program") {
+          document.body.style.backgroundColor = "#c00";
+        } else if (status === "preview") {
+          document.body.style.backgroundColor = "#0c0";
+        } else {
+          document.body.style.backgroundColor = "#ccc";
+        }
       }
     });
 
     function selectExterna(num) {
       currentExterna = num;
-      document.getElementById("menu").style.display = "none";
-      document.getElementById("statusScreen").style.display = "flex";
-      updateStatusScreen("idle");
+      menuDiv.style.display = "none";
+      backBtn.style.display = "block";
+      document.body.style.backgroundColor = "#ccc";
     }
 
     function goBack() {
       currentExterna = null;
-      document.getElementById("menu").style.display = "flex";
-      document.getElementById("statusScreen").style.display = "none";
+      menuDiv.style.display = "block";
+      backBtn.style.display = "none";
       document.body.style.backgroundColor = "#ccc";
-      document.getElementById("statusText").textContent = "Aguardando sinal...";
-    }
-
-    function updateStatusScreen(status) {
-      const statusText = document.getElementById("statusText");
-      if (status === "program") {
-        document.body.style.backgroundColor = "#f00";
-        statusText.textContent = "AO VIVO (PGM)";
-      } else if (status === "preview") {
-        document.body.style.backgroundColor = "#0f0";
-        statusText.textContent = "EM PREVIEW";
-      } else {
-        document.body.style.backgroundColor = "#ccc";
-        statusText.textContent = "Aguardando sinal...";
-      }
     }
   </script>
 </body>
 </html>
+"""
+
+with open("index.html", "w", encoding="utf-8") as f:
+    f.write(html_content)
+
