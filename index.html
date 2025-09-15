@@ -211,7 +211,7 @@
     function selectExterna(num) {
       // Publica presença no tópico clients da externa
       currentExterna = num;
-      client.publish(`externa/${num}/clients`, JSON.stringify({client: CLIENT_ID, action: "enter", timestamp: Date.now()}), {retain: false});
+      client.publish(`externa/${num}/clients`, JSON.stringify({client: CLIENT_ID, action: "enter", timestamp: Date.now()}), {retain: true});
       menuDiv.style.display = "none";
       backBtn.style.display = "block";
       updateButtons();
