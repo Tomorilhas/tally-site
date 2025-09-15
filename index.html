@@ -148,6 +148,38 @@
     let lastUpdate = {};
     let clientsInExterna = {}; // { '1': [clientId1, clientId2], ... }
 
+    // --- Heartbeat para presença robusta ---
+    let heartbeatInterval = null;
+    function startHeartbeat(externaNum) {
+      stopHeartbeat();
+      heartbeatInterval = setInterval(() => {
+        client.publish(`externa/${externaNum}/clients`, JSON.stringify({client: CLIENT_ID, action: "heartbeat", timestamp: Date.now()}), {retain: false});
+      }, 10000); // a cada 10 segundos
+    }
+    function stopHeartbeat() {
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
+      heartbeatInterval = null;
+    }
+    // Limpa clientes ausentes (não enviam heartbeat há 20s)
+    setInterval(() => {
+      const now = Date.now();
+      Object.keys(clientsInExterna).forEach(externaNum => {
+        // Se estrutura for array, converta para objeto
+        if (Array.isArray(clientsInExterna[externaNum])) {
+          const arr = clientsInExterna[externaNum];
+          clientsInExterna[externaNum] = {};
+          arr.forEach(cid => clientsInExterna[externaNum][cid] = now);
+        }
+        Object.keys(clientsInExterna[externaNum]).forEach(clientId => {
+          if (now - clientsInExterna[externaNum][clientId] > 20000) {
+            delete clientsInExterna[externaNum][clientId];
+          }
+        });
+      });
+      updateButtons();
+    }, 5000);
+    // --------------------------------------
+
     // --- WAKE LOCK: manter tela ativa ---
     let wakeLock = null;
     async function ativarTelaSempreLigada() {
@@ -214,19 +246,19 @@
           }
         }
       }
-      // Gerenciamento dos clientes conectados em cada externa
+      // Gerenciamento dos clientes conectados em cada externa (com heartbeat)
       if (topic.match(/^externa\/\d+\/clients$/)) {
         const externaNum = topic.split("/")[1];
         let msg = "";
         try {
           msg = JSON.parse(message.toString());
         } catch(e) { return; }
-        if (!clientsInExterna[externaNum]) clientsInExterna[externaNum] = [];
-        if (msg.action === "enter") {
-          if (!clientsInExterna[externaNum].includes(msg.client))
-            clientsInExterna[externaNum].push(msg.client);
+        // Inicializa estrutura como objeto timestamp se necessário
+        if (!clientsInExterna[externaNum] || Array.isArray(clientsInExterna[externaNum])) clientsInExterna[externaNum] = {};
+        if (msg.action === "enter" || msg.action === "heartbeat") {
+          clientsInExterna[externaNum][msg.client] = Date.now();
         } else if (msg.action === "leave") {
-          clientsInExterna[externaNum] = clientsInExterna[externaNum].filter(c => c !== msg.client);
+          delete clientsInExterna[externaNum][msg.client];
         }
         updateButtons();
       }
@@ -235,7 +267,8 @@
     function selectExterna(num) {
       // Publica presença no tópico clients da externa
       currentExterna = num;
-      client.publish(`externa/${num}/clients`, JSON.stringify({client: CLIENT_ID, action: "enter", timestamp: Date.now()}), {retain: true});
+      client.publish(`externa/${num}/clients`, JSON.stringify({client: CLIENT_ID, action: "enter", timestamp: Date.now()}), {retain: false});
+      startHeartbeat(num);
       if (menuDiv) menuDiv.style.display = "none";
       if (backBtn) backBtn.style.display = "block";
       updateButtons();
@@ -273,8 +306,9 @@
 
     function goBack() {
       if (currentExterna) {
-        client.publish(`externa/${currentExterna}/clients`, JSON.stringify({client: CLIENT_ID, action: "leave", timestamp: Date.now()}), {retain: true});
+        client.publish(`externa/${currentExterna}/clients`, JSON.stringify({client: CLIENT_ID, action: "leave", timestamp: Date.now()}), {retain: false});
       }
+      stopHeartbeat();
       currentExterna = null;
       if (menuDiv) menuDiv.style.display = "block";
       if (backBtn) backBtn.style.display = "none";
@@ -299,8 +333,10 @@
         else btn.classList.add("by");
 
         // Verifica presença de outros clientes além de mim
-        const clients = clientsInExterna[i] || [];
-        const otherClients = clients.filter(c => c !== CLIENT_ID);
+        let clients = clientsInExterna[i] || {};
+        // Suporte legado: se array, converte
+        if (Array.isArray(clients)) clients = Object.fromEntries(clients.map(cid => [cid, Date.now()]));
+        const otherClients = Object.keys(clients).filter(c => c !== CLIENT_ID);
         if (otherClients.length > 0) {
           btn.textContent += " (em uso)";
         }
@@ -355,6 +391,7 @@
       if (currentExterna) {
         client.publish(`externa/${currentExterna}/clients`, JSON.stringify({client: CLIENT_ID, action: "leave", timestamp: Date.now()}), {retain: false});
       }
+      stopHeartbeat();
       liberarTelaSempreLigada();
     });
 
