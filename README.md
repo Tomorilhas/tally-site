@@ -59,8 +59,7 @@ Você pode testar o funcionamento do site sem o ESP32 usando ferramentas como:
   - Port: `8884`
   - Path: `/mqtt`
   - TLS: ativado
-  - Username: `morilhas`
-  - Password: `Pi3,1415`
+  
 
 ### Tópicos para teste:
 - `externa/1/status`
@@ -76,10 +75,7 @@ Você pode testar o funcionamento do site sem o ESP32 usando ferramentas como:
 
 ## 🚀 Publicação com GitHub Pages
 
-1. Crie um repositório público chamado `tally-site`.
-2. Faça upload do arquivo `tally_site.html`.
-3. Vá em **Settings > Pages**.
-4. Selecione a branch principal e a pasta raiz.
+
 5. O site estará disponível em `https://seu-usuario.github.io/tally-site/`.
 
 ---
@@ -92,7 +88,4 @@ Você pode testar o funcionamento do site sem o ESP32 usando ferramentas como:
 
 ---
 
-## 📄 Licença
-
-Este projeto é de uso livre para fins jornalísticos e educacionais.
 
