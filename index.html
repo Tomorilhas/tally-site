@@ -1,4 +1,3 @@
-html_content = """
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
@@ -82,12 +81,20 @@ html_content = """
       console.error("MQTT Error:", err);
     });
 
+    client.on("close", () => {
+      statusDiv.textContent = "🔌 Conexão fechada!";
+    });
+
+    client.on("offline", () => {
+      statusDiv.textContent = "⚠️ Cliente offline";
+    });
+
     client.on("message", (topic, message) => {
       const externaNum = topic.toString().split("/")[1];
-      const status = message.toString();
+      const status = message.toString().trim();
       const btn = document.getElementById("btn" + externaNum);
       if (btn) {
-        if (status === "program" || status === "preview") {
+        if (status === "PGM" || status === "PW") {
           btn.textContent = `Externa ${externaNum} (em uso)`;
         } else {
           btn.textContent = `Externa ${externaNum}`;
@@ -95,11 +102,11 @@ html_content = """
       }
 
       if (currentExterna && topic === `externa/${currentExterna}/status`) {
-        if (status === "program") {
+        if (status === "PGM") {
           document.body.style.backgroundColor = "#c00";
-        } else if (status === "preview") {
+        } else if (status === "PW") {
           document.body.style.backgroundColor = "#0c0";
-        } else {
+        } else { // BY ou qualquer outro valor
           document.body.style.backgroundColor = "#ccc";
         }
       }
@@ -121,8 +128,3 @@ html_content = """
   </script>
 </body>
 </html>
-"""
-
-with open("index.html", "w", encoding="utf-8") as f:
-    f.write(html_content)
-
