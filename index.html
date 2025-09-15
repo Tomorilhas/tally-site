@@ -273,7 +273,7 @@
 
     function goBack() {
       if (currentExterna) {
-        client.publish(`externa/${currentExterna}/clients`, JSON.stringify({client: CLIENT_ID, action: "leave", timestamp: Date.now()}), {retain: false});
+        client.publish(`externa/${currentExterna}/clients`, JSON.stringify({client: CLIENT_ID, action: "leave", timestamp: Date.now()}), {retain: true});
       }
       currentExterna = null;
       if (menuDiv) menuDiv.style.display = "block";
