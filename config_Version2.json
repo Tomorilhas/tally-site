@@ -1,0 +1,25 @@
+{
+  "wifi": {
+    "ssid": "SeuSSID",
+    "pass": "SuaSenhaWiFi"
+  },
+  "mqtt": {
+    "server": "mqtts.exemplo.com",
+    "port": 8883,
+    "user": "usuario_mqtt",
+    "pass": "senha_mqtt"
+  },
+  "porta_pins": [12, 13, 14, 15, 16, 17, 18, 19, 21, 22],
+  "porta_names": [
+    "Porta 1",
+    "Porta 2",
+    "Porta 3",
+    "Porta 4",
+    "Porta 5",
+    "Porta 6",
+    "Porta 7",
+    "Porta 8",
+    "Porta 9",
+    "Porta 10"
+  ]
+}

@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Tally Externa</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      text-align: center;
+      background-color: #ccc;
+      color: #333;
+    }
+    .menu, .status {
+      padding: 20px;
+    }
+    .externa-btn {
+      display: block;
+      margin: 10px auto;
+      padding: 18px;
+      width: 85%;
+      font-size: 1.25em;
+      cursor: pointer;
+      border: 2px solid #888;
+      border-radius: 8px;
+      background: #f5f5f5;
+      transition: background 0.2s, border 0.2s, color 0.2s;
+      font-weight: bold;
+    }
+    .externa-btn.pgm {
+      background: #c00 !important;
+      color: #fff !important;
+      border-color: #b00 !important;
+    }
+    .externa-btn.pw {
+      background: #0c0 !important;
+      color: #fff !important;
+      border-color: #070 !important;
+    }
+    .externa-btn.by {
+      background: #ccc !important;
+      color: #2b2b2b !important;
+      border-color: #888 !important;
+    }
+    .externa-btn.selected {
+      outline: 4px solid #007f23;
+      z-index: 2;
+      position: relative;
+    }
+    #status-mqtt {
+      font-size: 0.95em;
+      margin-top: 10px;
+    }
+    #last-update {
+      font-size: 0.85em;
+      color: #666;
+      margin-top: 8px;
+    }
+    #back-btn {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      padding: 10px;
+      font-size: 1em;
+      cursor: pointer;
+      display: none;
+    }
+    #externa-info {
+      font-size: 1.3em;
+      margin-top: 40px;
+      font-weight: bold;
+    }
+    #status-label {
+      font-size: 2.3em;
+      margin-top: 20px;
+      font-weight: bold;
+      letter-spacing: 0.12em;
+    }
+    #status-label.pgm {
+      color: #fff;
+      background: #c00;
+      border-radius: 8px;
+      padding: 8px 30px;
+      display: inline-block;
+    }
+    #status-label.pw {
+      color: #fff;
+      background: #0c0;
+      border-radius: 8px;
+      padding: 8px 30px;
+      display: inline-block;
+    }
+    #status-label.by {
+      color: #222;
+      background: #ccc;
+      border-radius: 8px;
+      padding: 8px 30px;
+      display: inline-block;
+    }
+    @media (max-width: 600px) {
+      .externa-btn { font-size: 1em; padding: 15px; }
+      #externa-info { font-size: 1em; margin-top: 20px;}
+      #status-label { font-size: 1.5em; margin-top: 10px;}
+    }
+  </style>
+</head>
+<body>
+  <div class="menu" id="menu">
+    <h2>Selecione a Externa</h2>
+    <button class="externa-btn by" onclick="selectExterna(1)" id="btn1">Externa 1</button>
+    <button class="externa-btn by" onclick="selectExterna(2)" id="btn2">Externa 2</button>
+    <button class="externa-btn by" onclick="selectExterna(3)" id="btn3">Externa 3</button>
+    <button class="externa-btn by" onclick="selectExterna(4)" id="btn4">Externa 4</button>
+    <button class="externa-btn by" onclick="selectExterna(5)" id="btn5">Externa 5</button>
+    <div id="status-mqtt">Conectando ao MQTT...</div>
+    <div id="last-update"></div>
+  </div>
+
+  <button id="back-btn" onclick="goBack()">← Voltar</button>
+  <div id="externa-info" style="display:none;"></div>
+  <div id="status-label" style="display:none;"></div>
+
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script>
+    // Gera um ID único para o cliente (sessão)
+    const CLIENT_ID = 'client_' + Math.random().toString(36).substr(2, 9);
+
+    const brokerUrl = "wss://2ca26723bea1429ab8136fa9d24ea28d.s1.eu.hivemq.cloud:8884/mqtt";
+    const options = {
+      username: "morilhas",
+      password: "Pi3,1415",
+      connectTimeout: 4000,
+      reconnectPeriod: 4000,
+      clean: true
+    };
+
+    const client = mqtt.connect(brokerUrl, options);
+    const statusDiv = document.getElementById("status-mqtt");
+    const menuDiv = document.getElementById("menu");
+    const backBtn = document.getElementById("back-btn");
+    const statusLabel = document.getElementById("status-label");
+    const externaInfo = document.getElementById("externa-info");
+    const lastUpdateDiv = document.getElementById("last-update");
+
+    let currentExterna = null;
+    let externasStatus = {};
+    let lastUpdate = {};
+    let clientsInExterna = {}; // { '1': [clientId1, clientId2], ... }
+
+    // --- Heartbeat para presença robusta ---
+    let heartbeatInterval = null;
+    function startHeartbeat(externaNum) {
+      stopHeartbeat();
+      heartbeatInterval = setInterval(() => {
+        client.publish(`externa/${externaNum}/clients`, JSON.stringify({client: CLIENT_ID, action: "heartbeat", timestamp: Date.now()}), {retain: false});
+      }, 10000); // a cada 10 segundos
+    }
+    function stopHeartbeat() {
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
+      heartbeatInterval = null;
+    }
+    // Limpa clientes ausentes (não enviam heartbeat há 20s)
+    setInterval(() => {
+      const now = Date.now();
+      Object.keys(clientsInExterna).forEach(externaNum => {
+        // Se estrutura for array, converta para objeto
+        if (Array.isArray(clientsInExterna[externaNum])) {
+          const arr = clientsInExterna[externaNum];
+          clientsInExterna[externaNum] = {};
+          arr.forEach(cid => clientsInExterna[externaNum][cid] = now);
+        }
+        Object.keys(clientsInExterna[externaNum]).forEach(clientId => {
+          if (now - clientsInExterna[externaNum][clientId] > 20000) {
+            delete clientsInExterna[externaNum][clientId];
+          }
+        });
+      });
+      updateButtons();
+    }, 5000);
+    // --------------------------------------
+
+    // --- WAKE LOCK: manter tela ativa ---
+    let wakeLock = null;
+    async function ativarTelaSempreLigada() {
+      if ('wakeLock' in navigator) {
+        try {
+          wakeLock = await navigator.wakeLock.request('screen');
+          wakeLock.addEventListener('release', () => {
+            // Wake Lock liberada
+          });
+        } catch (err) {
+          // Falha ao requisitar wake lock (talvez permissão, ou não suportado)
+        }
+      }
+    }
+    async function liberarTelaSempreLigada() {
+      if (wakeLock) {
+        try {
+          await wakeLock.release();
+        } catch (err) {}
+        wakeLock = null;
+      }
+    }
+    // -----------------------------------
+
+    // Subscribe nos tópicos de status e clients
+    client.on("connect", () => {
+      if (statusDiv) statusDiv.textContent = "✅ Conectado ao MQTT";
+      for (let i = 1; i <= 5; i++) {
+        client.subscribe(`externa/${i}/status`);
+        client.subscribe(`externa/${i}/clients`);
+      }
+    });
+
+    client.on("error", (err) => {
+      if (statusDiv) statusDiv.textContent = "❌ Erro na conexão MQTT";
+      console.error("MQTT Error:", err);
+    });
+
+    client.on("close", () => {
+      if (statusDiv) statusDiv.textContent = "🔌 Conexão fechada!";
+    });
+
+    client.on("offline", () => {
+      if (statusDiv) statusDiv.textContent = "⚠️ Cliente offline";
+    });
+
+    client.on("reconnect", () => {
+      if (statusDiv) statusDiv.textContent = "Tentando reconectar...";
+    });
+
+    client.on("message", (topic, message) => {
+      // Status das externas
+      if (topic.match(/^externa\/\d+\/status$/)) {
+        const externaNum = topic.split("/")[1];
+        const status = message.toString().trim().toUpperCase();
+        externasStatus[externaNum] = status;
+        lastUpdate[externaNum] = new Date();
+        updateButtons();
+        updateStatusLabel();
+        if (currentExterna && lastUpdateDiv) {
+          const data = lastUpdate[currentExterna];
+          if (data) {
+            lastUpdateDiv.textContent = "Última atualização: " + data.toLocaleTimeString("pt-BR");
+          }
+        }
+      }
+      // Gerenciamento dos clientes conectados em cada externa (com heartbeat)
+      if (topic.match(/^externa\/\d+\/clients$/)) {
+        const externaNum = topic.split("/")[1];
+        let msg = "";
+        try {
+          msg = JSON.parse(message.toString());
+        } catch(e) { return; }
+        // Inicializa estrutura como objeto timestamp se necessário
+        if (!clientsInExterna[externaNum] || Array.isArray(clientsInExterna[externaNum])) clientsInExterna[externaNum] = {};
+        if (msg.action === "enter" || msg.action === "heartbeat") {
+          clientsInExterna[externaNum][msg.client] = Date.now();
+        } else if (msg.action === "leave") {
+          delete clientsInExterna[externaNum][msg.client];
+        }
+        updateButtons();
+      }
+    });
+
+    function selectExterna(num) {
+      // Publica presença no tópico clients da externa
+      currentExterna = num;
+      client.publish(`externa/${num}/clients`, JSON.stringify({client: CLIENT_ID, action: "enter", timestamp: Date.now()}), {retain: false});
+      startHeartbeat(num);
+      if (menuDiv) menuDiv.style.display = "none";
+      if (backBtn) backBtn.style.display = "block";
+      updateButtons();
+      updateStatusLabel();
+      updateExternaInfo();
+      if (statusLabel) statusLabel.style.display = "block";
+      if (externaInfo) externaInfo.style.display = "block";
+      // Exibe imediatamente o status da última mensagem recebida (retida)
+      const status = (externasStatus[num] || "BY").toUpperCase();
+      if (statusLabel) {
+        statusLabel.textContent = status;
+        statusLabel.className = "";
+        if (status === "PGM") {
+          statusLabel.classList.add("pgm");
+          document.body.style.backgroundColor = "#c00";
+        } else if (status === "PW") {
+          statusLabel.classList.add("pw");
+          document.body.style.backgroundColor = "#0c0";
+        } else {
+          statusLabel.classList.add("by");
+          document.body.style.backgroundColor = "#ccc";
+        }
+      }
+      // Atualiza hora imediatamente
+      if (lastUpdateDiv) {
+        const data = lastUpdate[num];
+        if (data) {
+          lastUpdateDiv.textContent = "Última atualização: " + data.toLocaleTimeString("pt-BR");
+        } else {
+          lastUpdateDiv.textContent = "";
+        }
+      }
+      ativarTelaSempreLigada();
+    }
+
+    function goBack() {
+      if (currentExterna) {
+        client.publish(`externa/${currentExterna}/clients`, JSON.stringify({client: CLIENT_ID, action: "leave", timestamp: Date.now()}), {retain: false});
+      }
+      stopHeartbeat();
+      currentExterna = null;
+      if (menuDiv) menuDiv.style.display = "block";
+      if (backBtn) backBtn.style.display = "none";
+      if (statusLabel) statusLabel.style.display = "none";
+      if (externaInfo) externaInfo.style.display = "none";
+      document.body.style.backgroundColor = "#ccc";
+      if (lastUpdateDiv) lastUpdateDiv.textContent = "";
+      updateButtons();
+      liberarTelaSempreLigada();
+    }
+
+    // Atualiza visual dos botões conforme status e presença
+    function updateButtons() {
+      for (let i = 1; i <= 5; i++) {
+        const btn = document.getElementById("btn" + i);
+        if (!btn) continue;
+        const status = (externasStatus[i] || "BY").toUpperCase();
+        btn.classList.remove("pgm", "pw", "by", "selected");
+        btn.textContent = `Externa ${i}`;
+        if (status === "PGM") btn.classList.add("pgm");
+        else if (status === "PW") btn.classList.add("pw");
+        else btn.classList.add("by");
+
+        // Verifica presença de outros clientes além de mim
+        let clients = clientsInExterna[i] || {};
+        // Suporte legado: se array, converte
+        if (Array.isArray(clients)) clients = Object.fromEntries(clients.map(cid => [cid, Date.now()]));
+        const otherClients = Object.keys(clients).filter(c => c !== CLIENT_ID);
+        if (otherClients.length > 0) {
+          btn.textContent += " (em uso)";
+        }
+        if (currentExterna == i) {
+          btn.classList.add("selected");
+        }
+      }
+    }
+
+    function updateStatusLabel() {
+      if (currentExterna && statusLabel) {
+        const status = (externasStatus[currentExterna] || "BY").toUpperCase();
+        statusLabel.style.display = "block";
+        statusLabel.className = "";
+        if (status === "PGM") {
+          statusLabel.textContent = "PGM";
+          statusLabel.classList.add("pgm");
+          document.body.style.backgroundColor = "#c00";
+        } else if (status === "PW") {
+          statusLabel.textContent = "PW";
+          statusLabel.classList.add("pw");
+          document.body.style.backgroundColor = "#0c0";
+        } else {
+          statusLabel.textContent = "BY";
+          statusLabel.classList.add("by");
+          document.body.style.backgroundColor = "#ccc";
+        }
+      } else if (statusLabel) {
+        statusLabel.style.display = "none";
+        document.body.style.backgroundColor = "#ccc";
+      }
+    }
+
+    function updateExternaInfo() {
+      if (externaInfo) {
+        if (currentExterna) {
+          externaInfo.style.display = "block";
+          externaInfo.textContent = `Você está na Externa ${currentExterna}`;
+        } else {
+          externaInfo.style.display = "none";
+        }
+      }
+    }
+
+    document.addEventListener('keydown', function(event) {
+      if (event.key === "Escape" && currentExterna !== null) {
+        goBack();
+      }
+    });
+
+    window.addEventListener('beforeunload', function() {
+      if (currentExterna) {
+        client.publish(`externa/${currentExterna}/clients`, JSON.stringify({client: CLIENT_ID, action: "leave", timestamp: Date.now()}), {retain: false});
+      }
+      stopHeartbeat();
+      liberarTelaSempreLigada();
+    });
+
+    updateButtons();
+    updateStatusLabel();
+    updateExternaInfo();
+  </script>
+</body>
+</html>
