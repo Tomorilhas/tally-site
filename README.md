@@ -1,98 +1,64 @@
-# 📡 Tally Site para Repórteres de Externa
+# ESP32 Tally Modular System
 
-Este projeto é um site simples e responsivo que atua como um **indicador de status (tally)** para repórteres que participam de transmissões ao vivo remotamente. Ele se conecta a um **broker MQTT** (HiveMQ Cloud) e muda de cor conforme o status da externa (preview, program ou idle).
+Este projeto implementa um sistema Tally para produção audiovisual utilizando ESP32, MQTT e configuração via portal web. O código é modularizado para facilitar manutenção e expansão.
 
----
+## Funcionalidades
 
-## 🎯 Objetivo
+- **Dual Core:** Utiliza os dois núcleos do ESP32 via FreeRTOS (monitoramento das portas em um core independente).
+- **Configuração fácil:** Portal web via Access Point para inserção dos dados de WiFi, MQTT e portas, usando página HTML hospedada no próprio ESP.
+- **Modularização:** Código dividido em arquivos separados:
+  - `main.cpp`: inicialização, tasks e loop principal
+  - `config_manager.h/cpp`: leitura da configuração (`config.json`)
+  - `mqtt_manager.h/cpp`: conexão MQTT e publicação dos estados das portas
+  - `port_monitor.h/cpp`: lógica de tally e monitoramento das portas
+  - `config_portal.h/cpp`: portal de configuração via AP
+- **Monitoramento de portas:** Cada dupla de portas corresponde a uma externa, ímpar (PGM/vermelho), par (PW/verde).
 
-Permitir que repórteres em campo saibam, em tempo real, se estão:
-- 🟢 Em **preview** (prontos para entrar no ar)
-- 🔴 Em **program** (ao vivo)
-- ⚪️ Em **idle** (fora do ar)
+## Como funciona
 
----
+1. **Configuração inicial**
+   - Pressione o botão de configuração por 3 segundos.
+   - O ESP32 entra em modo Access Point (`TallyConfigESP`, senha: `esp32config`).
+   - Conecte-se pelo celular e preencha os dados no portal web.
 
-## 🧠 Como Funciona
+2. **Operação**
+   - O ESP32 conecta ao WiFi e MQTT.
+   - Monitoramento das portas em tempo real (core 0).
+   - Publicação do estado das portas via MQTT.
+   - Se pressionar o botão de configuração novamente, retorna ao modo de configuração.
 
-1. O site é acessado por celular, sem necessidade de login.
-2. O repórter escolhe qual **Externa** está usando (Externa 1 a 5).
-3. O site se inscreve nos tópicos MQTT correspondentes:
-   - `externa/1/status`, `externa/2/status`, ... para status de cada externa
-   - `externa/1/clients`, `externa/2/clients`, ... para presença de outros usuários
-4. O fundo da tela muda de cor conforme o valor recebido:
-   - `"PGM"` → vermelho (**ao vivo**)
-   - `"PW"` → verde (**pronto para entrar**)
-   - `"BY"` → cinza (**fora do ar**)
-5. O site mostra o **status da conexão MQTT** e permite **voltar ao menu principal**.
-6. Os botões do menu principal exibem a cor do status de cada externa em tempo real.
-7. O menu inicial também indica **(em uso)** se outro usuário estiver visualizando aquela externa no momento.
-8. Quando um usuário entra em uma externa, a tela do dispositivo permanece sempre ativa (não apaga) enquanto ele estiver naquela externa (em navegadores compatíveis).
+## Como pedir este código para uma IA
 
----
+Veja o arquivo `prompt-tally-esp32.txt` para um prompt detalhado para IA.
 
-## 🔐 Configuração MQTT (HiveMQ Cloud)
+## Organização dos arquivos
 
-Este site está configurado para se conectar a um cluster MQTT seguro:
+- `main.cpp`
+- `config_manager.h` / `config_manager.cpp`
+- `mqtt_manager.h` / `mqtt_manager.cpp`
+- `port_monitor.h` / `port_monitor.cpp`
+- `config_portal.h` / `config_portal.cpp`
+- `config.json` (arquivo de configuração)
+- `README.md`
+- `prompt-tally-esp32.txt`
 
-- **Broker**: `wss://...hivemq.cloud:8884/mqtt`
-- **Porta**: `8884`
-- **Protocolo**: WebSocket TLS
-- **Usuário**: (oculto)
-- **Senha**: (oculta)
+## Exemplo de arquivo de configuração (`config.json`)
 
----
-
-## 📱 Como Usar o Site
-
-1. Acesse o site publicado via GitHub Pages:
-   - `https://seu-usuario.github.io/tally-site/`
-2. Escolha a externa correspondente.
-3. O fundo da tela mudará conforme o status recebido via MQTT.
-4. Se você e outra pessoa acessarem a mesma externa ao mesmo tempo, aparecerá **(em uso)** no botão correspondente no menu.
-
----
-
-## 🧪 Testes com MQTT
-
-Você pode testar o funcionamento do site sem o ESP32 usando ferramentas como:
-
-### MQTT Web Client (HiveMQ)
-- Acesse: [HiveMQ WebSocket Client](https://www.hivemq.com/demos/websocket-client/)
-- Configure:
-  - Host: `...hivemq.cloud`
-  - Port: `8884`
-  - Path: `/mqtt`
-  - TLS: ativado
-  - Username/Senha: (os mesmos configurados no código, ocultos neste README)
-
-### Tópicos para teste:
-- `externa/1/status`
-- `externa/2/status`
-- `externa/1/clients` (para simular presença de outros usuários)
-- ...
-
-### Valores para status:
-- `"PGM"` → tela vermelha
-- `"PW"` → tela verde
-- `"BY"` → tela cinza
-
----
-
-## 🚀 Publicação com GitHub Pages
-
-1. Crie um repositório público chamado `tally-site`.
-2. Faça upload dos arquivos do site.
-3. Vá em **Settings > Pages**.
-4. Selecione a branch principal e a pasta raiz.
-5. O site estará disponível em `https://seu-usuario.github.io/tally-site/`.
-
----
-
-## 🛠️ Funcionalidades Recentes
-
-- Indicação de presença simultânea de usuários na mesma externa (sinalização “em uso” via MQTT)
-- Botões do menu principal sempre refletem o status atual da externa (cor)
-- Tela do celular permanece sempre ativa ao entrar em uma externa (Screen Wake Lock API)
-- Status aparece imediatamente ao entrar em uma externa (mensagem retained do MQTT)
-
+```json
+{
+  "wifi": {
+    "ssid": "MeuWiFi",
+    "pass": "MinhaSenha"
+  },
+  "mqtt": {
+    "server": "broker.mqtt.com",
+    "port": 1883,
+    "user": "usuario",
+    "pass": "senha"
+  },
+  "porta_pins": [12,13,14,15,16,17,18,19,21,22],
+  "porta_names": [
+    "Porta 1","Porta 2","Porta 3","Porta 4","Porta 5",
+    "Porta 6","Porta 7","Porta 8","Porta 9","Porta 10"
+  ]
+}
